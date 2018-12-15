@@ -145,8 +145,7 @@
 (defn disposable?
   "Check if the provided object is disposable (jvm) or subscription (js)."
   [v]
-  #?(:clj (instance? Disposable v)
-     :cljs (instance? Subscription v)))
+  (instance? Disposable v))
 
 #?(:clj
    (defn flowable?
@@ -1254,7 +1253,9 @@
   "Transform the observable sequence using transducers."
   [xform ob]
   (when-not (observable? ob)
-    (throw (IllegalArgumentException. "Only observables are supported")))
+    #?(:clj (throw (IllegalArgumentException. "Only observables are supported"))
+       :cljs (throw (ex-info "Only observables are supported" {}))))
+
   (letfn [(sink-step [sink]
             (fn
               ([r] (sink end) r)
