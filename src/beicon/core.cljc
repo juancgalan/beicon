@@ -2,7 +2,8 @@
   (:refer-clojure :exclude [true? map filter reduce merge repeat mapcat
                             repeatedly zip dedupe drop take take-while
                             concat empty delay range throw do trampoline])
-  #?(:cljs (:require [beicon.impl.rxjs]))
+  #?(:cljs (:require [rxjs.core :as rx]
+                     [rxjs.operators :as rxop]))
   #?(:clj  (:import io.reactivex.BackpressureStrategy
                     io.reactivex.Emitter
                     io.reactivex.Flowable
@@ -120,17 +121,22 @@
      (def ^:private noop-consumer (as-consumer noop))
      (def ^:private noop-action (as-action noop))))
 
+#?(:cljs
+   (defn pipe
+     [ob op]
+     (.pipe ob op)))
+
 ;; --- Predicates
 
 #?(:cljs
    (do
-     (def ^:const Observable js/Rx.Observable)
-     (def ^:const Subject js/Rx.Subject)
-     (def ^:const BehaviorSubject js/Rx.BehaviorSubject)
-     (def ^:const Subscriber js/Rx.Subscriber)
-     (def ^:const Observer js/Rx.Subscriber)
-     (def ^:const Disposable js/Rx.Subscription)
-     (def ^:const Scheduler js/Rx.Scheduler)))
+     (def ^:const Observable rx/Observable)
+     (def ^:const Subject rx/Subject)
+     (def ^:const BehaviorSubject rx/BehaviorSubject)
+     (def ^:const Subscriber rx/Subscriber)
+     (def ^:const Observer rx/Subscriber)
+     (def ^:const Disposable rx/Subscription)
+     (def ^:const Scheduler rx/Scheduler)))
 
 (defn observable?
   "Return true if `ob` is a instance
@@ -165,8 +171,7 @@
 (defn scheduler?
   "Check if the provided value is Scheduler instance."
   [v]
-  #?(:clj (instance? Scheduler v)
-     :cljs (and v (fn? (.-schedule v)))))
+  (instance? Scheduler v))
 
 (defn subject?
   "Check if the provided value is Subject instance."
@@ -612,20 +617,22 @@
    (range 0 b))
   ([a b]
    {:pre [(number? a) (number? b)]}
-   #?(:cljs (.range Observable a b)
+   #?(:cljs (rx/range a b)
       :clj (Observable/range a b))))
 
 (defn publish
   "Create a connectable (hot) observable
   from other observable."
   [ob]
-  (.publish ob))
+  #?(:clj (.publish ob)
+     :cljs (pipe ob (rxop/publish))))
 
 (defn share
   "Returns an observable sequence that shares a single
   subscription to the underlying sequence."
   [ob]
-  (.share ob))
+  #?(:clj (.share ob)
+     :cljs (pipe ob (rxop/share))))
 
 (defn connect!
   "Connect the connectable observable."
@@ -636,7 +643,7 @@
   "Generates an observable sequence from collection."
   [coll]
   #?(:cljs (let [array (into-array coll)]
-             (.from Observable array))
+             (rx/from array))
      :clj  (Observable/fromIterable ^Iterable coll)))
 
 (defn from-atom
@@ -652,7 +659,7 @@
    (defn from-promise
     "Creates an observable from a promise."
      [p]
-     (.fromPromise Observable p))
+     (rx/from p))
    :clj
    (defn from-future
      "Creates an observable from a future."
@@ -670,13 +677,13 @@
    (defn from-event
      "Creates an Observable by attaching an event listener to an event target"
      [et ev]
-     (.fromEvent Observable et ev)))
+     (rx/fromEvent et ev)))
 
 (defn just
   "Returns an observable sequence that contains
   a single element."
   [v]
-  #?(:cljs (.of Observable v)
+  #?(:cljs (rx/of v)
      :clj (Observable/just v)))
 
 (defn once
@@ -688,7 +695,7 @@
   "Returns an observable sequence that is already
   in end state."
   []
-  #?(:cljs (.empty Observable)
+  #?(:cljs (rx/empty)
      :clj  (Observable/empty)))
 
 (def never
@@ -697,52 +704,52 @@
 
 (defn throw
   [e]
-  #?(:cljs ((aget Observable "throw") e)
+  #?(:cljs (rx/throwError e)
      :clj  (Observable/error e)))
 
 (defn timer
   "Returns an observable sequence that produces a value after
   `ms` has elapsed and then after each period."
   ([delay]
-   #?(:cljs (.timer Observable delay)
+   #?(:cljs (rx/timer delay)
       :clj  (Observable/timer ^long delay TimeUnit/MILLISECONDS)))
   ([delay period]
-   #?(:cljs (.timer Observable delay period)
+   #?(:cljs (rx/timer delay period)
       :clj  (Observable/interval ^long delay ^long period TimeUnit/MILLISECONDS))))
 
 (defn timeout
   "Returns the source observable sequence or the other
   observable sequence if dueTime elapses."
   ([ms ob]
-   #?(:cljs (.timeoutWith ob ms)
+   #?(:cljs (pipe ob (rxop/timeout ms))
       :clj  (.timeout ob ^long ms TimeUnit/MILLISECONDS)))
   ([ms other ob]
-   #?(:cljs (.timeoutWith ob ms other)
+   #?(:cljs (pipe ob (rxop/timeoutWith ms other))
       :clj  (.timeout ob ^long ms TimeUnit/MILLISECONDS other))))
 
 (defn delay
   "Time shifts the observable sequence by dueTime. The relative
   time intervals between the values are preserved."
   [ms ob]
-  #?(:cljs (.delay ob ms)
+  #?(:cljs (pipe ob (rxop/delay ms))
      :clj  (.delay ob ^long ms TimeUnit/MILLISECONDS)))
 
 (defn delay-when
   "Time shifts the observable sequence based on a subscription
   delay and a delay selector function for each element."
   ([sf ob]
-   #?(:cljs (.delayWhen ob sf)
+   #?(:cljs (pipe ob (rxop/delayWhen sf))
       :clj  (.delay ob (as-function sf))))
 
   ([sd sf ob]
-   #?(:cljs (.delayWhen ob sf sd)
+   #?(:cljs (pipe ob (rxop/delayWhen sf sd))
       :clj  (throw (ex-info "Not implemented" {})))))
 
 (defn interval
   "Returns an observable sequence that produces a
   value after each period."
   [ms]
-  #?(:cljs (.interval Observable ms)
+  #?(:cljs (rx/interval ms)
      :clj  (Observable/interval ^long ms TimeUnit/MILLISECONDS)))
 
 #?(:cljs
@@ -754,7 +761,7 @@
                               [(first items) (rest items)]
                               [vector items])
            items (if (vector? items) items (into [] items))]
-       (apply Observable.forkJoin (conj items selector)))))
+       (apply rx/forkJoin (conj items selector)))))
 
 #?(:cljs
    (def fork-join
@@ -764,25 +771,25 @@
 (defn of
   "Converts arguments to an observable sequence."
   ([a]
-   #?(:cljs (Observable.of a)
+   #?(:cljs (rx/of a)
       :clj  (Observable/just a)))
   ([a b]
-   #?(:cljs (Observable.of a b)
+   #?(:cljs (rx/of a b)
       :clj  (Observable/just a b)))
   ([a b c]
-   #?(:cljs (Observable.of a b c)
+   #?(:cljs (rx/of a b c)
       :clj  (Observable/just a b c)))
   ([a b c d]
-   #?(:cljs (Observable.of a b c d)
+   #?(:cljs (rx/of a b c d)
       :clj  (Observable/just a b c d)))
   ([a b c d e]
-   #?(:cljs (Observable.of a b c d e)
+   #?(:cljs (rx/of a b c d e)
       :clj  (Observable/just a b c d e)))
   ([a b c d e f]
-   #?(:cljs (Observable.of a b c d e f)
+   #?(:cljs (rx/of a b c d e f)
       :clj  (Observable/just a b c d e f)))
   ([a b c d e f & more]
-   #?(:cljs (apply Observable.of a b c d e f more)
+   #?(:cljs (apply rx/of a b c d e f more)
       :clj  (let [values (into [a b c d e f] more)]
               (Observable/fromIterable ^Iterable values)))))
 
@@ -866,10 +873,10 @@
   "Create an observable that surfaces any of the given
   sequences, whichever reacted first."
   ([a b]
-   #?(:cljs (.race a b)
+   #?(:cljs (rx/race a b)
       :clj  (Observable/amb ^Iterable (list a b))))
   ([a b & more]
-   #?(:cljs (cljs.core/reduce race (race a b) more)
+   #?(:cljs (apply rx/race a b more)
       :clj  (let [values (cons a (cons b more))]
               (Observable/amb ^Iterable values)))))
 
@@ -881,7 +888,7 @@
                            [(first items) (rest items)]
                            [vector items])
         items (if (vector? items) items (vec items))]
-    #?(:cljs (apply Observable.zip (conj items selector))
+    #?(:cljs (apply rx/zip (conj items selector))
        :clj  (let [items (clojure.core/filter identity items)]
                (cond
                  (every? observable? items)
@@ -903,7 +910,7 @@
   sequence terminated successfully."
   [& more]
   #?(:cljs (let [more (cljs.core/filter identity more)]
-             (cljs.core/reduce #(.concat %1 %2) more))
+             (apply rx/concat more))
      :clj  (let [more (clojure.core/filter identity more)]
              (cond
                (every? observable? more)
@@ -922,7 +929,7 @@
   into a single observable sequence."
   [& more]
   #?(:cljs (let [more (cljs.core/filter identity more)]
-             (cljs.core/reduce #(.merge %1 %2) more))
+             (apply rx/merge more))
      :clj  (let [more (clojure.core/filter identity more)]
 
              (cond
@@ -942,20 +949,20 @@
      "Merges an observable sequence of observable
      sequences into an observable sequence."
      [ob]
-     (.mergeAll ob)))
+     (pipe ob (rxop/mergeAll))))
 
 (defn filter
   "Filters the elements of an observable sequence
   based on a predicate."
   [f ob]
-  #?(:cljs (.filter ob #(boolean (f %)))
+  #?(:cljs (pipe ob (rxop/filter #(boolean (f %))))
      :clj  (.filter ob (as-predicate f))))
 
 (defn map
   "Apply a function to each element of an observable
   sequence."
   [f ob]
-  #?(:cljs (.map ob #(f %))
+  #?(:cljs (pipe ob (rxop/map #(f %)))
      :clj  (.map ob (as-function f))))
 
 (defn flat-map
@@ -966,7 +973,7 @@
   ([ob]
    (flat-map identity ob))
   ([f ob]
-   #?(:cljs (.flatMap ob #(f %))
+   #?(:cljs (pipe ob (rx/flatMap #(f %)))
       :clj  (.flatMap ob (as-function f)))))
 
 (def merge-map
@@ -978,7 +985,7 @@
   sequence and concatenates the resulting observable sequences or
   Promises or array/iterable into one observable sequence."
   [f ob]
-  #?(:cljs (.concatMap ob #(f %))
+  #?(:cljs (pipe ob (rxop/concatMap #(f %)))
      :clj  (.concatMap ob (as-function f))))
 
 (defn skip
@@ -986,48 +993,52 @@
   observable sequence and then returns the remaining
   elements."
   [n ob]
-  (.skip ob (int n)))
+  #?(:clj (.skip ob (int n))
+     :cljs (pipe ob (rxop/skip (int n)))))
 
 (defn skip-while
   "Bypasses elements in an observable sequence as long
   as a specified condition is true and then returns the
   remaining elements."
   [f ob]
-  #?(:cljs (.skipWhile ob #(boolean (f %)))
+  #?(:cljs (pipe ob (rxop/skipWhile #(boolean (f %))))
      :clj  (.skipWhile ob (as-predicate f))))
 
 (defn skip-until
   "Returns the values from the source observable sequence
   only after the other observable sequence produces a value."
   [pob ob]
-  (.skipUntil ob pob))
+  #?(:clj (.skipUntil ob pob)
+     :cljs (pipe ob (rxop/skipUntil pob))))
 
 (defn take
   "Bypasses a specified number of elements in an
   observable sequence and then returns the remaining
   elements."
   [n ob]
-  (.take ob (int n)))
+  #?(:clj (.take ob n)
+     :cljs (pipe ob (rxop/take n))))
 
 (defn take-while
   "Returns elements from an observable sequence as long as a
   specified predicate returns true."
   [f ob]
-  #?(:cljs (.takeWhile ob #(boolean (f %)))
+  #?(:cljs (pipe ob (rx/takeWhile #(boolean (f %))))
      :clj  (.takeWhile ob (as-predicate f))))
 
 (defn take-until
   "Returns the values from the source observable sequence until
   the other observable sequence or Promise produces a value."
   [other ob]
-  (.takeUntil ob other))
+  #?(:clj (.takeUntil ob other)
+     :cljs (pipe ob (rxop/takeUntil other))))
 
 (defn reduce
   "Applies an accumulator function over an observable
   sequence, returning the result of the aggregation as a
   single element in the result sequence."
   ([f ob]
-   #?(:cljs (.reduce ob #(f %1 %2))
+   #?(:cljs (pipe ob (rxop/reduce #(f %1 %2)))
       :clj  (cond
               (observable? ob)
               (-> (.reduce ob (as-bifunction f))
@@ -1040,7 +1051,7 @@
               :else (throw (IllegalArgumentException. "`ob` should be observable or flowable")))))
 
   ([f seed ob]
-   #?(:cljs (.reduce ob #(f %1 %2) seed)
+   #?(:cljs (pipe ob (rxop/reduce #(f %1 %2) seed))
       :clj  (cond
               (observable? ob)
               (-> (.reduce ob seed (as-bifunction f))
@@ -1057,10 +1068,10 @@
   sequence and returns each intermediate result.
   Same as reduce but with intermediate results"
   ([f ob]
-   #?(:cljs (.scan ob #(f %1 %2))
+   #?(:cljs (pipe ob (rxop/scan #(f %1 %2)))
       :clj  (.scan ob (as-bifunction f))))
   ([f seed ob]
-   #?(:cljs (.scan ob #(f %1 %2) seed)
+   #?(:cljs (pipe ob (rxop/scan #(f %1 %2) seed))
       :clj  (.scan ob seed (as-bifunction f)))))
 
 (defn with-latest
@@ -1069,7 +1080,7 @@
   function only when the source observable sequence
   (the instance) produces an element."
   [f other source]
-  #?(:cljs (.withLatestFrom source other f)
+  #?(:cljs (pipe source (rxop/withLatestFrom other f))
      :clj  (.withLatestFrom source other (as-bifunction f))))
 
 (defn combine-latest
@@ -1079,7 +1090,7 @@
   ([other ob]
    (combine-latest vector other ob))
   ([f other ob]
-   #?(:cljs (.combineLatest ob other f)
+   #?(:cljs (pipe ob (rxop/combineLatest other f))
       :clj  (let [^Iterable sources (list ob other)
                   ^Function combiner (as-function #(apply f (seq %)))]
               (cond
@@ -1103,13 +1114,14 @@
   "Continues an observable sequence that is terminated
   by an exception with the next observable sequence."
   ([handler ob]
-   #?(:cljs (.catch ob (fn [value]
-                         (let [value (handler value)]
-                           (cond
-                             (observable? value) value
-                             (-end? value) (empty)
-                             (-error? value) (throw value)
-                             (-next? value) (just value)))))
+   #?(:cljs (pipe ob (rxop/catchError
+                      (fn [value]
+                        (let [value (handler value)]
+                          (cond
+                            (observable? value) value
+                            (-end? value) (empty)
+                            (-error? value) (throw value)
+                            (-next? value) (just value))))))
       :clj  (.onErrorResumeNext ob (as-function
                                     (fn [value]
                                       (let [value (unwrap-composite-exception value)
@@ -1131,15 +1143,15 @@
   "Invokes an action for each element in the
   observable sequence."
   ([f ob]
-   #?(:cljs (.do ob f)
+   #?(:cljs (pipe ob (rxop/tap f))
       :clj  (.doOnNext ob (as-consumer f))))
   ([f g ob]
-   #?(:cljs (.do ob f g)
+   #?(:cljs (pipe ob (rxop/tap f g))
       :clj  (-> ob
                 (.doOnNext (as-consumer f))
                 (.doOnError (as-consumer g)))))
   ([f g e ob]
-   #?(:cljs (.do ob f g e)
+   #?(:cljs (pipe ob (rxop/tap f g e))
       :clj  (-> ob
                 (.doOnNext (as-consumer f))
                 (.doOnError (as-consumer g))
@@ -1170,7 +1182,7 @@
   first item emitted by the source Observable during
   sequential time windows of a specified duration."
   [ms ob]
-  #?(:cljs (.throttleTime ob ms)
+  #?(:cljs (pipe ob (rxop/throttleTime ms))
      :clj  (.throttleFirst ob ^long ms TimeUnit/MILLISECONDS)))
 
 (defn debounce
@@ -1178,25 +1190,26 @@
   particular timespan has passed without the Observable
   omitting any other items."
   [ms ob]
-  #?(:cljs (.debounceTime ob ms)
+  #?(:cljs (pipe ob (rxop/debounceTime ms))
      :clj  (.debounce ob ^long ms TimeUnit/MILLISECONDS)))
 
 (defn sample
   "Samples the observable sequence at each interval."
   [ms ob]
-  #?(:cljs (.sampleTime ob ms)
+  #?(:cljs (pipe ob (rxop/sampleTime ms))
      :clj  (.sample ob ^long ms TimeUnit/MILLISECONDS)))
 
 (defn sample-when
   "Samples the observable sequence at each interval."
   [other ob]
-  (.sample ob other))
+  #?(:clj (.sample ob other)
+     :cljs (pipe ob (rxop/sample other))))
 
 (defn ignore
   "Ignores all elements in an observable sequence leaving
   only the termination messages."
   [ob]
-  #?(:cljs (.ignoreElements ob)
+  #?(:cljs (pipe ob (rxop/ignoreElements))
      :clj  (.. ob ignoreElements toObservable)))
 
 (defn dedupe
@@ -1206,7 +1219,7 @@
    #?(:cljs (dedupe identity ob)
       :clj  (.distinctUntilChanged ob)))
   ([f ob]
-   #?(:cljs (.distinctUntilChanged ob = f)
+   #?(:cljs (pipe ob (rxop/distinctUntilChanged = f))
       :clj  (.distinctUntilChanged ob (as-function f)))))
 
 (defn dedupe'
@@ -1216,10 +1229,10 @@
   due to the maintenance of an internal lookup structure
   which can grow large."
   ([ob]
-   #?(:cljs (.distinct ob =)
+   #?(:cljs (pipe ob (rxop/distinct =))
       :clj  (.distinct ob)))
   ([f ob]
-   #?(:cljs (.distinct ob = f)
+   #?(:cljs (pipe ob (rxop/distinct = f))
       :clj  (.distinct ob (as-function f)))))
 
 (defn buffer
@@ -1227,16 +1240,16 @@
   or more buffers which are produced based on element count
   information."
   ([n ob]
-   #?(:cljs (.bufferCount ob n)
+   #?(:cljs (pipe ob (rxop/bufferCount n))
       :clj  (.buffer ob (int n))))
   ([n skip ob]
-   #?(:cljs (.bufferCount ob n skip)
+   #?(:cljs (pipe ob (rxop/bufferCount n skip))
       :clj  (.buffer ob (int n) (int skip)))))
 
 (defn buffer-time
   "Buffers the source Observable values for a specific time period."
   [ms ob]
-  #?(:cljs (.bufferTime ob ms)
+  #?(:cljs (pipe ob (rxop/bufferTime ms))
      :clj (.buffer ob ms TimeUnit/MILLISECONDS)))
 
 (defn retry
@@ -1245,9 +1258,11 @@
   times or until it terminates. If no number of retries
   is given, it will be retried indefinitely."
   ([ob]
-   (.retry ob))
+   #?(:clj (.retry ob)
+      :cljs (pipe ob (rxop/retry))))
   ([n ob]
-   (.retry ob ^long n)))
+   #?(:clj (.retry ob ^long n)
+      :cljs (pipe ob (rxop/retry ^long n)))))
 
 (defn transform
   "Transform the observable sequence using transducers."
@@ -1281,10 +1296,11 @@
      Old `:trampoline` type is renamed as `:queue` and is deprecated."
      [type]
      (case type
-       :asap (.-asap Scheduler)
-       :async (.-async Scheduler)
-       :queue (.-queue Scheduler)
-       :trampoline (.-queue Scheduler)))
+       :asap rx/asapScheduler
+       :async rx/asyncScheduler
+       :queue rx/queueScheduler
+       :af rx/animationFrameScheduler
+       :animation-frame rx/animationFrameScheduler))
    :clj
    (defn scheduler
      "Get the scheduler instance by type. The possible
@@ -1302,10 +1318,12 @@
   [schd ob]
   (cond
     (scheduler? schd)
-    (.observeOn ob ^Scheduler schd)
+    #?(:clj (.observeOn ob ^Scheduler schd)
+       :cljs (pipe ob (rxop/observeOn schd)))
 
     (keyword? schd)
-    (.observeOn ob ^Scheduler (scheduler schd))
+    #?(:clj (.observeOn ob ^Scheduler (scheduler schd))
+       :cljs (pipe ob (rxop/observeOn (scheduler schd))))
 
     :else
     (throw (ex-info "Invalid argument" {:type ::invalid-argument}))))
@@ -1314,10 +1332,12 @@
   [schd ob]
   (cond
     (scheduler? schd)
-    (.subscribeOn ob ^Scheduler schd)
+    #?(:clj (.subscribeOn ob ^Scheduler schd)
+       :cljs (pipe ob (rxop/subscribeOn schd)))
 
     (keyword? schd)
-    (.subscribeOn ob ^Scheduler (scheduler schd))
+    #?(:clj (.subscribeOn ob ^Scheduler (scheduler schd))
+       :cljs (pipe ob (rxop/subscribeOn (scheduler schd))))
 
     :else
     (throw (ex-info "Invalid argument" {:type ::invalid-argument}))))
