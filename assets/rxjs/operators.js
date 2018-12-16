@@ -14,7 +14,8 @@ See the Apache Version 2.0 License for specific language governing permissions
 and limitations under the License.
 *****************************************************************************/
 goog.provide("rxjs.operators");
-var module$output_operators = rxjs.operators = {default:{}};
+var module$output_operators = rxjs.operators;
+
 module$output_operators.audit = function(c) {
   return function(a) {
     return a.lift(new AuditOperator$$module$output_operators(c));

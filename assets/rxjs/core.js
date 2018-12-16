@@ -14,8 +14,7 @@ See the Apache Version 2.0 License for specific language governing permissions
 and limitations under the License.
 *****************************************************************************/
 goog.provide("rxjs.core");
-
-var module$output_core = rxjs.core = {default:{}};
+var module$output_core = rxjs.core;
 module$output_core.noop = function() {
 };
 module$output_core.pipe = function() {
